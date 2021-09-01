@@ -3,9 +3,6 @@ jobs:
   build:
     docker:
       - image: circleci/node:10
-    branches:
-      only:
-        - master
     steps:
       - checkout
       - run: echo "A first hello"
