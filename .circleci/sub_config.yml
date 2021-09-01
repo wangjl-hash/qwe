@@ -1,0 +1,203 @@
+version: 2.1
+orbs:
+  aws: circleci/aws-cli@2.0.2
+  kubernetes: circleci/kubernetes@0.12.0
+parameters:
+  system:
+    type: string
+    default: "act"
+
+  rest-api_container_build:
+    type: boolean
+    default: false
+  async-api-consumer_container_build:
+    type: boolean
+    default: false
+  event-api-consumer_container_build:
+    type: boolean
+    default: false
+  batch_container_build:
+    type: boolean
+    default: false
+
+  rep_secret:
+    type: string
+    default: "act-secret"
+  rep_common:
+    type: string
+    default: "act-common"
+  git_exe_user:
+    type: string
+    default: "${CIRCLE_USERNAME}"
+  git_act_user:
+    type: string
+    default: "msmw-npf-arc-github-act-ext%40nri.co.jp"
+  git_project_id:
+    type: string
+    default: "misumi-org"
+    
+executors:
+  default:
+    docker:
+      - image: cimg/base:2021.01
+    environment:
+      TZ: "JST-9"
+  pulumi_runtime:
+    docker:
+      - image: ghcr.io/misumi-org/act-cicd/ghcr-c-all-iac-pulumi-test:latest
+        auth:
+          username: << pipeline.parameters.git_act_user >>
+          password: ${act_githubtoken}
+    environment:
+      TZ: "JST-9"
+
+jobs:
+  pipeline_start:
+    executor:
+      name: default
+    steps:
+      - run:
+          name: pipeline_start
+          command: |
+            set -x
+            echo "Execution date=`date`"
+            echo "Processing branch=${CIRCLE_PROJECT_REPONAME}"
+            echo "Processing branch=${CIRCLE_BRANCH}"
+            echo "Execution user=${CIRCLE_USERNAME}"
+            echo "CircleCIÇ…ÇƒèàóùÇé¿çsÇµÇ‹Ç∑ÅB"
+
+  apl_module_build:
+    executor:
+      name: default
+    steps:
+      - run:
+          name: apl_module_build
+          command: |
+            echo "ògíÒãü"
+
+  apl_module_test:
+    executor:
+      name: default
+    steps:
+      - run:
+          name: apl_module_test
+          command: |
+            echo "ògíÒãü"
+
+  docker_file_build_and_push:
+    parameters:
+      docker_file_path:
+        type: string
+        default: ""
+    executor:
+      name: default
+    steps:
+      - setup_remote_docker
+      - run:
+          name: docker_build
+          command: |
+            set -x
+            docker_file_path="<< parameters.docker_file_path >>"
+            git_exe_user="<< pipeline.parameters.git_exe_user >>"
+            git_project_id="<< pipeline.parameters.git_project_id >>"
+            rep_common="<< pipeline.parameters.rep_common >>"
+            git_exe_user_token=`echo "${git_exe_user//-/_}_githubtoken"`
+            echo "${!git_exe_user_token}" | docker login ghcr.io -u ${git_exe_user} --password-stdin
+          
+            git clone --recursive -b ${CIRCLE_BRANCH} https://${git_exe_user}:${!git_exe_user_token}@github.com/${git_project_id}/${CIRCLE_PROJECT_REPONAME}.git ./${CIRCLE_PROJECT_REPONAME}          
+            git clone --recursive                     https://${git_exe_user}:${!git_exe_user_token}@github.com/${git_project_id}/${rep_common}.git ./${rep_common}
+          
+            ./${rep_common}/script/pipeline_docker_build_gather.sh ${CIRCLE_PROJECT_REPONAME}/${docker_file_path}
+          
+            ./${rep_common}/script/pipeline_docker_befaddtag_gather.sh ${CIRCLE_PROJECT_REPONAME}/${docker_file_path} ${git_project_id} ${CIRCLE_PROJECT_REPONAME} ${CIRCLE_SHA1}
+          
+            ./${rep_common}/script/pipeline_docker_aftaddtag_gather.sh ${CIRCLE_PROJECT_REPONAME}/${docker_file_path}
+
+  no_job_execution:
+    docker:
+      - image: cimg/base:2021.01
+    environment:
+      TZ: "JST-9"
+    steps:
+      - run:
+          name: no_job_execution
+          command: |
+            echo "Job execution is skipped because there is no update in the corresponding directory."
+workflows:
+  rest-api_container_build:
+    when: << pipeline.parameters.rest-api_container_build >>
+    jobs:
+      - pipeline_start
+      - apl_module_build:
+          requires:
+            - pipeline_start
+      - apl_module_test:
+          requires:
+            - apl_module_build
+      - docker_file_build_and_push:
+          docker_file_path: << pipeline.parameters.system >>-rest-api/docker/
+          requires:
+            - apl_module_test
+          context:
+            - github_token
+
+  async-api-consumer_container_build:
+    when: << pipeline.parameters.async-api-consumer_container_build >>
+    jobs:
+      - pipeline_start
+      - apl_module_build:
+          requires:
+            - pipeline_start
+      - apl_module_test:
+          requires:
+            - apl_module_build
+      - docker_file_build_and_push:
+          docker_file_path: << pipeline.parameters.system >>-async-api-consumer/docker/
+          requires:
+            - apl_module_test
+          context:
+            - github_token
+
+  event-api-consumer_container_build:
+    when: << pipeline.parameters.event-api-consumer_container_build >>
+    jobs:
+      - pipeline_start
+      - apl_module_build:
+          requires:
+            - pipeline_start
+      - apl_module_test:
+          requires:
+            - apl_module_build
+      - docker_file_build_and_push:
+          docker_file_path: << pipeline.parameters.system >>-event-api-consumer/docker/
+          requires:
+            - apl_module_test
+          context:
+            - github_token
+
+  batch_container_build:
+    when: << pipeline.parameters.batch_container_build >>
+    jobs:
+      - pipeline_start
+      - apl_module_build:
+          requires:
+            - pipeline_start
+      - apl_module_test:
+          requires:
+            - apl_module_build
+      - docker_file_build_and_push:
+          docker_file_path: << pipeline.parameters.system >>-batch/docker/
+          requires:
+            - apl_module_test
+          context:
+            - github_token
+
+  no_job_execution:
+    when:
+      and:
+        - not: << pipeline.parameters.rest-api_container_build >>
+        - not: << pipeline.parameters.async-api-consumer_container_build >>
+        - not: << pipeline.parameters.event-api-consumer_container_build >>
+        - not: << pipeline.parameters.batch_container_build >>
+    jobs:
+      - no_job_execution
